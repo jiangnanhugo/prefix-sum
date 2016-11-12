@@ -25,6 +25,7 @@ void read_input(char *inputname)
         _size = atoi(line);
         _input = malloc(sizeof(int) * _size);
 
+        /* Read the integers */
         int i = 0;
         while ((read = getline(&line, &len, inputfile)) != -1) {
                 int x = atoi(line);
@@ -36,7 +37,7 @@ void read_input(char *inputname)
         fclose(inputfile);
 }
 
-/* Compute the prefix sum for each element */
+/* Compute the prefix sum for each element in place  */
 void compute_sums()
 {
         int i;
@@ -44,6 +45,7 @@ void compute_sums()
                 _input[i] = _input[i] + _input[i - 1];
 }
 
+/* Print the prefix sums */
 void print_results()
 {
         int i;
@@ -52,7 +54,7 @@ void print_results()
         printf("\n");
 }
 
-void main(int argc, char* argv[])
+void main(int argc, char *argv[])
 {
         if (argc < 2) {
                 fprintf(stderr, "Must provide a filename\n");
