@@ -22,7 +22,7 @@ __global__ void compute_sums(int *input, int size)
 {
 	int tid = threadIdx.x;
 
-	/* Initialize shared memory */
+	/* Initialize the buffers in shared memory */
 	extern __shared__ int shmem[];
 	int *in = shmem;
 	int *out = &shmem[size];
@@ -31,16 +31,19 @@ __global__ void compute_sums(int *input, int size)
 	__syncthreads();
 
 	/* Compute the prefix sums */
-        // int offset;
-	// for (offset = 1; offset < size; offset *= 2) {
-	// 	/* ... */
+        int offset;
+	for (offset = 1; offset < size; offset *= 2) {
+		/* Swap the arrays */
+		int *tmp = in;
+		in = out;
+		out = tmp;
+		__syncthreads();
 
-	// 	/* Swap the arrays */
-	// 	int *tmp = in;
-	// 	in = out;
-	// 	out = tmp;
-	// }
-	// __syncthreads();
+		if (tid - offset < 0)
+			out[tid] = in[tid];
+		else	
+			out[tid] = in[tid] + in[tid - offset];		
+	}
         
 	if (tid == 0)
 		print_results(out, size);
@@ -98,7 +101,6 @@ __host__ int main(int argc, char *argv[])
 
         free(inputname);
         free(h_input);
-	cudaFree(d_input);
-        
+	cudaFree(d_input);        
 	return 0;
 }
