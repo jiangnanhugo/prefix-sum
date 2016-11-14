@@ -3,9 +3,14 @@
 #include <string.h>
 
 
-int _size;     /* Size of the input */
-int *h_input;  /* Host-side input array */
-int *d_input;  /* Device-side input array */
+int _length;       /* Length of the input array */
+int _blocks;       /* Number of GPU blocks to use */
+int _input_size;   /* Size of the input array in bytes */
+int _sums_size;    /* Size of the block sums array in bytes */
+int *h_input;      /* Host-side input array */
+int *h_block_sums; /* Host-side sums for each block */ 
+int *d_input;      /* Device-side input array */
+int *d_block_sums; /* Device-side sums for each block */
 
 
 /* Print the prefix sums */
@@ -17,37 +22,39 @@ __device__ void print_results(int *output, int size)
         printf("\n");
 }
 
-/* Compute the prefix sum for each element in place  */
-__global__ void compute_sums(int *input, int size)
+/* Compute the prefix sum for each element in the block */
+__global__ void compute_sums(int *input, int *block_sums, int size)
 {
-	int tid = threadIdx.x;
+        int tid = threadIdx.x;
+        int bid = blockIdx.x;
 
-	/* Initialize the buffers in shared memory */
-	extern __shared__ int shmem[];
-	int *in = shmem;
-	int *out = &shmem[size];
-	in[tid] = input[tid];
-	out[tid] = input[tid];
-	__syncthreads();
+        /* Initialize the buffers in shared memory */
+        extern __shared__ int shmem[];
+        int *in = shmem;
+        int *out = &shmem[size];
+        in[tid] = input[tid];
+        out[tid] = input[tid];
+        __syncthreads();
 
-	/* Compute the prefix sums */
+        /* Compute the prefix sums */
         int offset;
-	for (offset = 1; offset < size; offset *= 2) {
-		/* Swap the arrays */
-		int *tmp = in;
-		in = out;
-		out = tmp;
-		__syncthreads();
+        for (offset = 1; offset < size; offset *= 2) {
+                /* Swap the arrays */
+                int *tmp = in;
+                in = out;
+                out = tmp;
+                __syncthreads();
 
-		if (tid - offset < 0)
-			out[tid] = in[tid];
-		else	
-			out[tid] = in[tid] + in[tid - offset];		
-	}
-        
-	if (tid == 0)
-		print_results(out, size);
+                if (tid - offset < 0)
+                        out[tid] = in[tid];
+                else    
+                        out[tid] = in[tid] + in[tid - offset];          
+        }
 	__syncthreads();
+
+	/* Copy the highest prefix sum to the block sums array */
+	if (tid == 0)
+		block_sums[bid] = out[size - 1];
 }
 
 /* Parse the input file */
@@ -65,8 +72,12 @@ __host__ void read_input(char *inputname)
         char *line = NULL;
         size_t len = 0;
         ssize_t read = getline(&line, &len, inputfile);
-        _size = atoi(line);
-        h_input = (int *)malloc(sizeof(int) * _size);
+        _length = atoi(line);
+	_blocks = 256 / _length; /* TODO: Use max threads per block */
+	_input_size = sizeof(int) * _length;
+	_sums_size = sizeof(int) * _blocks;
+        h_input = (int *)malloc(_input_size);
+	h_block_sums = (int *)malloc(_sums_size);
 
         /* Read the integers */
         int i = 0;
@@ -76,9 +87,12 @@ __host__ void read_input(char *inputname)
                 i++;
         }
 
-	/* Copy the input to the GPU */
-	cudaMalloc((void **) &d_input, sizeof(int) * _size);
-	cudaMemcpy(d_input, h_input, sizeof(int) * _size, 
+        /* Copy the input to the GPU */
+        cudaMalloc((void **) &d_input, _input_size);
+	cudaMalloc((void **) &d_block_sums, _sums_size);
+        cudaMemcpy(d_input, h_input, _input_size, 
+                   cudaMemcpyHostToDevice);
+	cudaMemcpy(d_block_sums, h_block_sums, _sums_size,
 		   cudaMemcpyHostToDevice);
 
         free(line);
@@ -96,11 +110,22 @@ __host__ int main(int argc, char *argv[])
         strcpy(inputname, argv[1]);
         read_input(inputname);
 
-	int shmem_size = sizeof(int) * _size * 2;
-        compute_sums<<<1, _size, shmem_size>>>(d_input, _size);
+	/* Compute the prefix sums for each block */
+        int shmem_size = sizeof(int) * _length * 2;
+        compute_sums<<<1, _length, shmem_size>>>(d_input, d_block_sums,
+						 _length);
+	cudaMemcpy(h_block_sums, d_block_sums, _sums_size,
+		   cudaMemcpyDeviceToHost);
+	cudaDeviceSynchronize();
+
+	/* Get the final results */
+	printf("h_block_sums[0] = %d\n", h_block_sums[0]);
+        /* ... */
 
         free(inputname);
         free(h_input);
-	cudaFree(d_input);        
-	return 0;
+	free(h_block_sums);
+        cudaFree(d_input);
+	cudaFree(d_block_sums);
+        return 0;
 }
