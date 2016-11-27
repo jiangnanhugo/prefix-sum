@@ -1,10 +1,9 @@
 #include <stdlib.h>
 #include <stdio.h>
 #include <string.h>
-
+#include "info.h"
 
 int _length;       /* Length of the input array */
-int _block_len;    /* Length of the input on each block */
 int _size;         /* Size of the input array in bytes */
 int _blocks;       /* Number of GPU blocks to use */
 int *h_input;      /* Host-side input array */
@@ -93,12 +92,11 @@ __host__ void read_input(char *inputname)
         ssize_t read = getline(&line, &len, inputfile);
         _length = atoi(line);
 
-	/* Determine the input length for each block */
-	if (_length <= 128)
+	/* Compute the number of blocks to use */
+	if (_length <= 256)
 		_blocks = 1;
 	else
-		_blocks = _length / 128; /* TODO: Use max threads per block */
-	_block_len = _length / _blocks;
+		_blocks = _length / 256;
 
 	/* Allocate the input/output arrays */
 	_size = sizeof(int) * _length;
@@ -143,20 +141,24 @@ __host__ int main(int argc, char *argv[])
         size_t len = strlen(argv[1]);
         char *inputname = (char *)malloc(len + 1);
         strcpy(inputname, argv[1]);
-        read_input(inputname);
 
+        //unsigned start = ticks();
+        read_input(inputname);
+        
 	/* Compute the prefix sums for each block */
         int shmem_size = _size * 2;
-        compute_sums<<<_blocks, _block_len, shmem_size>>>(d_input, d_output,
-							  _block_len);
+        compute_sums<<<_blocks, 256, shmem_size>>>(d_input, d_output,
+                                                   256);
 
 	/* Compute the final results */
-	aggregate_blocks<<<1, _block_len, shmem_size / 2>>>(d_output,
-							    _block_len,
-							    _blocks);
+	aggregate_blocks<<<1, 256, shmem_size / 2>>>(d_output,
+                                                     256,
+                                                     _blocks);
 	cudaMemcpy(h_output, d_output, _size, cudaMemcpyDeviceToHost);
 	cudaDeviceSynchronize();
-	print_results(h_output, _length);
+        //unsigned end = ticks();
+        //printf("Total ticks = %u\n", end - start);
+	//print_results(h_output, _length);
 
 	free(inputname);
 	free(h_input);

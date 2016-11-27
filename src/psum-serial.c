@@ -1,7 +1,7 @@
 #include <stdlib.h>
 #include <stdio.h>
 #include <string.h>
-
+#include "info.h"
 
 int _size;    /* Size of the input */
 int *_input;  /* Input array of integers */
@@ -63,10 +63,13 @@ void main(int argc, char *argv[])
         size_t len = strlen(argv[1]);
         char *inputname = malloc(len + 1);
         strcpy(inputname, argv[1]);
-       
+
+        //unsigned start = ticks();
         read_input(inputname);
         compute_sums();
-        print_results();
+        //unsigned end = ticks();
+        //printf("Total ticks = %u\n", end - start);
+        //print_results();
 
         free(inputname);
         free(_input);
