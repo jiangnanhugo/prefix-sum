@@ -3,13 +3,17 @@
 #include <string.h>
 #include "info.h"
 
-int _length;       /* Length of the input array */
-int _size;         /* Size of the input array in bytes */
-int _blocks;       /* Number of GPU blocks to use */
-int *h_input;      /* Host-side input array */
-int *h_output;     /* Host-side output array */
-int *d_input;      /* Device-side input array */
-int *d_output;     /* Device-side output array */
+
+#define THREADS 256  /* Number of per-block threads */
+
+
+int _length;         /* Length of the input array */
+int _size;           /* Size of the input array in bytes */
+int _blocks;         /* Number of GPU blocks to use */
+int *h_input;        /* Host-side input array */
+int *h_output;       /* Host-side output array */
+int *d_input;        /* Device-side input array */
+int *d_output;       /* Device-side output array */
 
 
 /* Compute the prefix sum for each element in the block */
@@ -93,10 +97,10 @@ __host__ void read_input(char *inputname)
         _length = atoi(line);
 
 	/* Compute the number of blocks to use */
-	if (_length <= 256)
+	if (_length <= THREADS)
 		_blocks = 1;
 	else
-		_blocks = _length / 256;
+		_blocks = _length / THREADS;
 
 	/* Allocate the input/output arrays */
 	_size = sizeof(int) * _length;
@@ -147,13 +151,14 @@ __host__ int main(int argc, char *argv[])
         
 	/* Compute the prefix sums for each block */
         int shmem_size = _size * 2;
-        compute_sums<<<_blocks, 256, shmem_size>>>(d_input, d_output,
-                                                   256);
+        compute_sums<<<_blocks, THREADS, shmem_size>>>(d_input,
+						       d_output,
+						       THREADS);
 
 	/* Compute the final results */
-	aggregate_blocks<<<1, 256, shmem_size / 2>>>(d_output,
-                                                     256,
-                                                     _blocks);
+	aggregate_blocks<<<1, THREADS, shmem_size / 2>>>(d_output,
+							 THREADS,
+							 _blocks);
 	cudaMemcpy(h_output, d_output, _size, cudaMemcpyDeviceToHost);
 	cudaDeviceSynchronize();
         //unsigned end = ticks();
