@@ -48,10 +48,12 @@ void compute_sums()
 /* Print the prefix sums */
 void print_results()
 {
-        int i;
-        for (i = 0; i < _size; i++)
-                printf("%d ", _input[i]);
-        printf("\n");
+        // int i;
+        // for (i = 0; i < _size; i++)
+        //         printf("%d ", _input[i]);
+        // printf("\n");
+
+	printf("Final prefix sum: %d\n", _input[_size - 1]);
 }
 
 void main(int argc, char *argv[])
@@ -63,13 +65,10 @@ void main(int argc, char *argv[])
         size_t len = strlen(argv[1]);
         char *inputname = malloc(len + 1);
         strcpy(inputname, argv[1]);
-
-        //unsigned start = ticks();
         read_input(inputname);
+
         compute_sums();
-        //unsigned end = ticks();
-        //printf("Total ticks = %u\n", end - start);
-        //print_results();
+        print_results();
 
         free(inputname);
         free(_input);
