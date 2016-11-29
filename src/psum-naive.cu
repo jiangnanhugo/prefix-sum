@@ -50,8 +50,10 @@ __global__ void compute_sums(int *input, int *output)
 	output[idx] = out[tid];
 }
 
-/* Add the highest prefix sum of block i-1 to each element
- * of block i */
+/* 
+ * Add the highest prefix sum of block i-1 to each element
+ * of block i
+ */
 __global__ void aggregate_blocks(int *output, int blocks)
 {
 	if (blocks == 1)
@@ -60,9 +62,9 @@ __global__ void aggregate_blocks(int *output, int blocks)
 	int tid = threadIdx.x;
 	int i;
 	for (i = 1; i < blocks; i++) {
-		int prev_max = (i * THREADS) - 1;
 		int idx = (i * THREADS) + tid;
-		output[idx] += output[prev_max];
+		int prev_block = (i * THREADS) - 1;
+		output[idx] += output[prev_block];
 		__syncthreads();
 	}
 }
@@ -139,12 +141,10 @@ __host__ int main(int argc, char *argv[])
         
 	/* Compute the prefix sums for each block */
         int shmem_size = sizeof(int) * THREADS * 2;
-        compute_sums<<<_blocks, THREADS, shmem_size>>>(d_input,
-						       d_output);
+        compute_sums<<<_blocks, THREADS, shmem_size>>>(d_input, d_output);
 
 	/* Compute the final results */
-	aggregate_blocks<<<1, THREADS, shmem_size / 2>>>(d_output,
-							 _blocks);
+	aggregate_blocks<<<1, THREADS>>>(d_output, _blocks);
 	cudaMemcpy(h_output, d_output, _size, cudaMemcpyDeviceToHost);
 	cudaDeviceSynchronize();
 	print_results(h_output, _length);
