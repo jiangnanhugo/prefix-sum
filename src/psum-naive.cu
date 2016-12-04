@@ -4,12 +4,12 @@
 #include "info.h"
 
 
-#define THREADS 256  /* Number of per-block threads */
+#define MAX_THREADS 256  /* Number of per-block threads */
 
 
-int length;         /* Length of the input array */
-int bytes;          /* Size of the input array in bytes */
-int blocks;         /* Number of GPU blocks to use */
+int length;          /* Length of the input array */
+int bytes;           /* Size of the input array in bytes */
+int blocks;          /* Number of GPU blocks to use */
 int *h_input;        /* Host-side input array */
 int *h_output;       /* Host-side output array */
 int *d_input;        /* Device-side input array */
@@ -21,12 +21,11 @@ __global__ void compute_sums(int *input, int *output, int offset)
 {
         int tid = threadIdx.x;
         int bid = blockIdx.x;
-	int idx = (bid * THREADS) + tid;
-
+	int idx = (bid * MAX_THREADS) + tid;
 	if (idx - offset < 0)
-		output[idx] = input[idx];
-	else    
-		output[idx] = input[idx] + input[idx - offset];
+		return;
+
+	output[idx] = input[idx] + input[idx - offset];
 }
 
 /* Parse the input file */
@@ -47,12 +46,12 @@ __host__ void read_input(char *inputname)
         length = atoi(line);
 
 	/* Compute the number of blocks to use */
-	if (length <= THREADS)
+	if (length <= MAX_THREADS)
 		blocks = 1;
 	else
-		blocks = length / THREADS;
+		blocks = length / MAX_THREADS;
 
-	/* Allocate the input/output arrays */
+	/* Allocate the CPU buffers */
 	bytes = sizeof(int) * length;
         h_input = (int *)malloc(bytes);
 	h_output = (int *)malloc(bytes);
@@ -65,12 +64,10 @@ __host__ void read_input(char *inputname)
                 i++;
         }
 
-        /* Copy the input to the GPU */
+        /* Allocate the GPU buffers */
         cudaMalloc((void **) &d_input, bytes);
-        cudaMemcpy(d_input, h_input, bytes, cudaMemcpyHostToDevice);
-
-	/* Allocate the output array on the GPU */
 	cudaMalloc((void **) &d_output, bytes);
+        cudaMemcpy(d_input, h_input, bytes, cudaMemcpyHostToDevice);
 	cudaMemcpy(d_output, h_input, bytes, cudaMemcpyHostToDevice);
 
         free(line);
@@ -95,11 +92,10 @@ __host__ int main(int argc, char *argv[])
 		int *tmp = d_input;
 		d_input = d_output;
 		d_output = tmp;
-
-		compute_sums<<<blocks, THREADS>>>(d_input, d_output, offset);
+		
+		compute_sums<<<blocks, MAX_THREADS>>>(d_input, d_output, offset);
 	}
 	cudaMemcpy(h_output, d_output, bytes, cudaMemcpyDeviceToHost);
-	cudaDeviceSynchronize();
 	printf("Final prefix sum: %d\n", h_output[length - 1]);
 
 	free(inputname);
