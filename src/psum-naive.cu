@@ -7,9 +7,9 @@
 #define THREADS 256  /* Number of per-block threads */
 
 
-int _length;         /* Length of the input array */
-int _size;           /* Size of the input array in bytes */
-int _blocks;         /* Number of GPU blocks to use */
+int length;         /* Length of the input array */
+int bytes;          /* Size of the input array in bytes */
+int blocks;         /* Number of GPU blocks to use */
 int *h_input;        /* Host-side input array */
 int *h_output;       /* Host-side output array */
 int *d_input;        /* Device-side input array */
@@ -17,56 +17,16 @@ int *d_output;       /* Device-side output array */
 
 
 /* Compute the prefix sum for each element in the block */
-__global__ void compute_sums(int *input, int *output)
+__global__ void compute_sums(int *input, int *output, int offset)
 {
         int tid = threadIdx.x;
         int bid = blockIdx.x;
 	int idx = (bid * THREADS) + tid;
 
-        /* Initialize the buffers in shared memory */
-        extern __shared__ int shmem[];
-        int *in = shmem;
-        int *out = &shmem[THREADS];
-        in[tid] = input[idx];
-        out[tid] = input[idx];
-        __syncthreads();
-
-        /* Compute the prefix sums */
-        int offset;
-        for (offset = 1; offset < THREADS; offset *= 2) {
-                /* Swap the arrays */
-                int *tmp = in;
-                in = out;
-                out = tmp;
-                __syncthreads();
-
-                if (tid - offset < 0)
-                        out[tid] = in[tid];
-                else    
-                        out[tid] = in[tid] + in[tid - offset];
-        }
-
-	/* Copy the shared memory output to main memory */
-	output[idx] = out[tid];
-}
-
-/* 
- * Add the highest prefix sum of block i-1 to each element
- * of block i
- */
-__global__ void aggregate_blocks(int *output, int blocks)
-{
-	if (blocks == 1)
-		return;
-
-	int tid = threadIdx.x;
-	int i;
-	for (i = 1; i < blocks; i++) {
-		int idx = (i * THREADS) + tid;
-		int prev_block = (i * THREADS) - 1;
-		output[idx] += output[prev_block];
-		__syncthreads();
-	}
+	if (idx - offset < 0)
+		output[idx] = input[idx];
+	else    
+		output[idx] = input[idx] + input[idx - offset];
 }
 
 /* Parse the input file */
@@ -84,18 +44,18 @@ __host__ void read_input(char *inputname)
         char *line = NULL;
         size_t len = 0;
         ssize_t read = getline(&line, &len, inputfile);
-        _length = atoi(line);
+        length = atoi(line);
 
 	/* Compute the number of blocks to use */
-	if (_length <= THREADS)
-		_blocks = 1;
+	if (length <= THREADS)
+		blocks = 1;
 	else
-		_blocks = _length / THREADS;
+		blocks = length / THREADS;
 
 	/* Allocate the input/output arrays */
-	_size = sizeof(int) * _length;
-        h_input = (int *)malloc(_size);
-	h_output = (int *)malloc(_size);
+	bytes = sizeof(int) * length;
+        h_input = (int *)malloc(bytes);
+	h_output = (int *)malloc(bytes);
 
         /* Read the input */
         int i = 0;
@@ -106,26 +66,15 @@ __host__ void read_input(char *inputname)
         }
 
         /* Copy the input to the GPU */
-        cudaMalloc((void **) &d_input, _size);
-        cudaMemcpy(d_input, h_input, _size, 
-                   cudaMemcpyHostToDevice);
+        cudaMalloc((void **) &d_input, bytes);
+        cudaMemcpy(d_input, h_input, bytes, cudaMemcpyHostToDevice);
 
 	/* Allocate the output array on the GPU */
-	cudaMalloc((void **) &d_output, _size);
+	cudaMalloc((void **) &d_output, bytes);
+	cudaMemcpy(d_output, h_input, bytes, cudaMemcpyHostToDevice);
 
         free(line);
         fclose(inputfile);
-}
-
-/* Print the prefix sums */
-__host__ void print_results(int *output, int len)
-{
-        // int i;
-        // for (i = 0; i < len; i++)
-        //         printf("%d ", output[i]);
-        // printf("\n");
-
-	printf("Final prefix sum: %d\n", output[len - 1]);
 }
 
 __host__ int main(int argc, char *argv[])
@@ -139,15 +88,19 @@ __host__ int main(int argc, char *argv[])
         strcpy(inputname, argv[1]);
         read_input(inputname);
         
-	/* Compute the prefix sums for each block */
-        int shmem_size = sizeof(int) * THREADS * 2;
-        compute_sums<<<_blocks, THREADS, shmem_size>>>(d_input, d_output);
+	/* Compute the prefix sums, one level of the tree at a time */
+	int offset;
+	for (offset = 1; offset < length; offset *= 2) {
+		/* Swap the array pointers for double buffering */
+		int *tmp = d_input;
+		d_input = d_output;
+		d_output = tmp;
 
-	/* Compute the final results */
-	aggregate_blocks<<<1, THREADS>>>(d_output, _blocks);
-	cudaMemcpy(h_output, d_output, _size, cudaMemcpyDeviceToHost);
+		compute_sums<<<blocks, THREADS>>>(d_input, d_output, offset);
+	}
+	cudaMemcpy(h_output, d_output, bytes, cudaMemcpyDeviceToHost);
 	cudaDeviceSynchronize();
-	print_results(h_output, _length);
+	printf("Final prefix sum: %d\n", h_output[length - 1]);
 
 	free(inputname);
 	free(h_input);
