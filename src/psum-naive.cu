@@ -16,7 +16,7 @@ int *d_input;            /* Device-side input array */
 int *d_output;           /* Device-side output array */
 
 
-/* Compute the prefix sum for each element in the block */
+/* Compute the prefix sums */
 __global__ void compute_sums(int *input, int *output, int length, int offset)
 {
         int x = threadIdx.x + (blockIdx.x * blockDim.x); 
@@ -72,14 +72,6 @@ __host__ void read_input(char *inputname)
 
         free(line);
         fclose(inputfile);
-}
-
-__host__ void print_results(int *output, int length)
-{
-	int i;
-	for (i = 0; i < length; i++)
-		printf("%d ", output[i]);
-	printf("\n ");
 }
 
 __host__ int main(int argc, char *argv[])

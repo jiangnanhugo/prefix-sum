@@ -3,6 +3,7 @@
 #include <string.h>
 #include "info.h"
 
+
 int _size;    /* Size of the input */
 int *_input;  /* Input array of integers */
 
@@ -45,17 +46,6 @@ void compute_sums()
                 _input[i] = _input[i] + _input[i - 1];
 }
 
-/* Print the prefix sums */
-void print_results()
-{
-        // int i;
-        // for (i = 0; i < _size; i++)
-        //         printf("%d ", _input[i]);
-        // printf("\n");
-
-	printf("Final prefix sum: %d\n", _input[_size - 1]);
-}
-
 void main(int argc, char *argv[])
 {
         if (argc < 2) {
@@ -68,7 +58,7 @@ void main(int argc, char *argv[])
         read_input(inputname);
 
         compute_sums();
-        print_results();
+        printf("Final prefix sum: %d\n", _input[_size - 1]);
 
         free(inputname);
         free(_input);
