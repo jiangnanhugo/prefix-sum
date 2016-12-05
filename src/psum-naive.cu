@@ -4,25 +4,25 @@
 #include "info.h"
 
 
-#define MAX_THREADS 256  /* Number of per-block threads */
+#define THREADS 256
 
 
-int length;          /* Length of the input array */
-int bytes;           /* Size of the input array in bytes */
-int blocks;          /* Number of GPU blocks to use */
-int *h_input;        /* Host-side input array */
-int *h_output;       /* Host-side output array */
-int *d_input;        /* Device-side input array */
-int *d_output;       /* Device-side output array */
+int length;              /* Length of the input array */
+int bytes;               /* Size of the input array in bytes */
+int blocks;              /* Number of GPU blocks to use */
+int *h_input;            /* Host-side input array */
+int *h_output;           /* Host-side output array */
+int *d_input;            /* Device-side input array */
+int *d_output;           /* Device-side output array */
 
 
 /* Compute the prefix sum for each element in the block */
-__global__ void compute_sums(int *input, int *output, int offset)
+__global__ void compute_sums(int *input, int *output, int length, int offset)
 {
-        int tid = threadIdx.x;
-        int bid = blockIdx.x;
-	int idx = (bid * MAX_THREADS) + tid;
-	if (idx - offset < 0)
+        int x = threadIdx.x + (blockIdx.x * blockDim.x); 
+        int y = threadIdx.y + (blockIdx.y * blockDim.y);
+	int idx = x + (y * blockDim.x * gridDim.y);
+	if (idx >= length || idx - offset < 0)
 		return;
 
 	output[idx] = input[idx] + input[idx - offset];
@@ -46,10 +46,10 @@ __host__ void read_input(char *inputname)
         length = atoi(line);
 
 	/* Compute the number of blocks to use */
-	if (length <= MAX_THREADS)
+	if (length <= THREADS)
 		blocks = 1;
 	else
-		blocks = length / MAX_THREADS;
+		blocks = ceil(length / THREADS);
 
 	/* Allocate the CPU buffers */
 	bytes = sizeof(int) * length;
@@ -74,6 +74,14 @@ __host__ void read_input(char *inputname)
         fclose(inputfile);
 }
 
+__host__ void print_results(int *output, int length)
+{
+	int i;
+	for (i = 0; i < length; i++)
+		printf("%d ", output[i]);
+	printf("\n ");
+}
+
 __host__ int main(int argc, char *argv[])
 {
         if (argc < 2) {
@@ -85,6 +93,10 @@ __host__ int main(int argc, char *argv[])
         strcpy(inputname, argv[1]);
         read_input(inputname);
         
+	/* Set the block and grid dimensions */
+	dim3 grid(ceil(sqrt(blocks)), ceil(sqrt(blocks)));
+	dim3 block(sqrt(THREADS), sqrt(THREADS)); 
+
 	/* Compute the prefix sums, one level of the tree at a time */
 	int offset;
 	for (offset = 1; offset < length; offset *= 2) {
@@ -93,7 +105,8 @@ __host__ int main(int argc, char *argv[])
 		d_input = d_output;
 		d_output = tmp;
 		
-		compute_sums<<<blocks, MAX_THREADS>>>(d_input, d_output, offset);
+		compute_sums<<<grid, block>>>(d_input, d_output,
+					      length, offset);
 	}
 	cudaMemcpy(h_output, d_output, bytes, cudaMemcpyDeviceToHost);
 	printf("Final prefix sum: %d\n", h_output[length - 1]);
