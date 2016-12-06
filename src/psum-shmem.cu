@@ -17,15 +17,39 @@ int *d_output;           /* Device-side output array */
 
 
 /* Compute the prefix sums */
-__global__ void compute_sums(int *input, int *output, int length, int offset)
+__global__ void partial_sums(int *input, int *output, int length)
 {
-        int x = threadIdx.x + (blockIdx.x * blockDim.x); 
-        int y = threadIdx.y + (blockIdx.y * blockDim.y);
-	int idx = x + (y * blockDim.x * gridDim.y);
-	if (idx >= length || idx - offset < 0)
-		return;
-
-	output[idx] = input[idx] + input[idx - offset];
+        int tid = threadIdx.x;
+        int bid = blockIdx.x + (blockIdx.y * gridDim.x);
+        int idx = tid + (bid * blockDim.x);
+        if (idx >= length)
+                return;
+        
+        /* Load input into shared memory */
+        extern __shared__ int temp[];
+        int *in = temp;
+        int *out = &temp[THREADS];
+        in[tid] = input[idx];
+        out[tid] = input[idx];
+        __syncthreads();
+        
+        /* Compute the partial sums */
+        int offset;
+        for (offset = 1; offset < THREADS; offset *= 2) {
+                /* Swap the buffer pointers */
+                int *swap = in;
+                in = out;
+                out = swap;
+                
+                if (tid < offset)
+                        out[tid] = in[tid];
+                else
+                        out[tid] = in[tid] + in[tid - offset];
+                __syncthreads();
+        }
+        
+        /* Copy shared memory to main memory */
+        output[idx] = out[tid];
 }
 
 /* Parse the input file */
@@ -45,16 +69,16 @@ __host__ void read_input(char *inputname)
         ssize_t read = getline(&line, &len, inputfile);
         length = atoi(line);
 
-	/* Compute the number of blocks to use */
-	if (length <= THREADS)
-		blocks = 1;
-	else
-		blocks = ceil(length / THREADS);
+        /* Compute the number of blocks to use */
+        if (length <= THREADS)
+                blocks = 1;
+        else
+                blocks = ceil(length / THREADS);
 
-	/* Allocate the CPU buffers */
-	bytes = sizeof(int) * length;
+        /* Allocate the CPU buffers */
+        bytes = sizeof(int) * length;
         h_input = (int *)malloc(bytes);
-	h_output = (int *)malloc(bytes);
+        h_output = (int *)malloc(bytes);
 
         /* Read the input */
         int i = 0;
@@ -66,10 +90,9 @@ __host__ void read_input(char *inputname)
 
         /* Allocate the GPU buffers */
         cudaMalloc((void **) &d_input, bytes);
-	cudaMalloc((void **) &d_output, bytes);
+        cudaMalloc((void **) &d_output, bytes);
         cudaMemcpy(d_input, h_input, bytes, cudaMemcpyHostToDevice);
-	cudaMemcpy(d_output, h_input, bytes, cudaMemcpyHostToDevice);
-
+        
         free(line);
         fclose(inputfile);
 }
@@ -85,28 +108,19 @@ __host__ int main(int argc, char *argv[])
         strcpy(inputname, argv[1]);
         read_input(inputname);
         
-	/* Set the block and grid dimensions */
-	dim3 grid(ceil(sqrt(blocks)), ceil(sqrt(blocks)));
-	dim3 block(sqrt(THREADS), sqrt(THREADS)); 
-
-	/* Compute the prefix sums, one level of the tree at a time */
-	int offset;
-	for (offset = 1; offset < length; offset *= 2) {
-		/* Swap the array pointers for double buffering */
-		int *tmp = d_input;
-		d_input = d_output;
-		d_output = tmp;
-		
-		compute_sums<<<grid, block>>>(d_input, d_output,
-					      length, offset);
-	}
-	cudaMemcpy(h_output, d_output, bytes, cudaMemcpyDeviceToHost);
-	printf("Final prefix sum: %d\n", h_output[length - 1]);
-
-	free(inputname);
-	free(h_input);
-	free(h_output);
-	cudaFree(d_input);
-	cudaFree(d_output);
-	return 0;
+        /* Compute the partial sums */
+        dim3 grid(ceil(sqrt(blocks)), ceil(sqrt(blocks)));
+        dim3 block(THREADS, 1);
+        int shmem_size = sizeof(int) * THREADS * 2;
+        int output_size = sizeof(int) * length;
+        partial_sums<<<grid, block, shmem_size>>>(d_input, d_output, length);
+        cudaMemcpy(h_output, d_output, output_size, cudaMemcpyDeviceToHost);
+        printf("Final prefix sum: %d\n", h_output[length - 1]);
+        
+        free(inputname);
+        free(h_input);
+        free(h_output);
+        cudaFree(d_input);
+        cudaFree(d_output);
+        return 0;
 }
