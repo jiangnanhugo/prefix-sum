@@ -54,8 +54,8 @@ __global__ void compute_sums(int *input, int *output, int *scalars, int length)
         output[idx] = out[tid];
 
         /* Copy the highest sum to the array of block sums */
-	if (tid == 0)
-		scalars[bid] = out[THREADS - 1];
+        if (tid == 0)
+                scalars[bid] = out[THREADS - 1];
 }
 
 /* Add the scalar to each element in the block */
@@ -68,7 +68,7 @@ __global__ void add_scalars(int *output, int *scalars, int length)
                 return;
 
         extern __shared__ int scalar[];
-	scalar[0] = scalars[bid - 1];
+        scalar[0] = scalars[bid - 1];
 
         if (bid > 0)
                 output[idx] += scalar[0];
@@ -77,9 +77,9 @@ __global__ void add_scalars(int *output, int *scalars, int length)
 /* Aggregate the scalars on the CPU */
 __host__ void compute_scalars(int *scalars, int length)
 {
-	int i;
-	for (i = 1; i < length; i++)
-		scalars[i] += scalars[i - 1]; 
+        int i;
+        for (i = 1; i < length; i++)
+                scalars[i] += scalars[i - 1]; 
 }
 
 /* Parse the input file */
@@ -104,8 +104,8 @@ __host__ void read_input(char *inputname)
                 blocks = 1;
         else
                 blocks = ceil(length / THREADS);
-	scalars_size = sizeof(int) * blocks;
-	shmem_size = sizeof(int) * THREADS * 2;
+        scalars_size = sizeof(int) * blocks;
+        shmem_size = sizeof(int) * THREADS * 2;
 
         /* Allocate the CPU buffers */
         buffers_size = sizeof(int) * length;
@@ -147,13 +147,13 @@ __host__ int main(int argc, char *argv[])
         dim3 block(THREADS, 1);
         compute_sums<<<grid, block, shmem_size>>>(d_input, d_output,
                                                   d_scalars, length);
-	cudaMemcpy(h_scalars, d_scalars, scalars_size,
-		   cudaMemcpyDeviceToHost);
+        cudaMemcpy(h_scalars, d_scalars, scalars_size,
+                   cudaMemcpyDeviceToHost);
 
         /* Compute the scalars for each block */
-	compute_scalars(h_scalars, blocks);
-	cudaMemcpy(d_scalars, h_scalars, scalars_size,
-		   cudaMemcpyHostToDevice);
+        compute_scalars(h_scalars, blocks);
+        cudaMemcpy(d_scalars, h_scalars, scalars_size,
+                   cudaMemcpyHostToDevice);
 
         /* Add the scalars for each block to the output */
         add_scalars<<<grid, block, sizeof(int)>>>(d_output, d_scalars, length);
