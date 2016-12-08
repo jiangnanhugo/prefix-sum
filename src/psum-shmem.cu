@@ -67,11 +67,11 @@ __global__ void add_scalars(int *output, int *scalars, int length)
         if (idx >= length)
                 return;
 
-        extern __shared__ int scalar[];
-        scalar[0] = scalars[bid - 1];
+        __shared__ int scalar;
+        scalar = scalars[bid - 1];
 
         if (bid > 0)
-                output[idx] += scalar[0];
+                output[idx] += scalar;
 }
 
 /* Aggregate the scalars on the CPU */
